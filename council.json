@@ -1,0 +1,60 @@
+{
+  "_comment": "只用 pi 调用模型，只用 opencode-go 的四个模型：DeepSeek V4.1 Flash、Muse Spark 1.3 Contributor、GLM-5.3-Flash、GPT 6 Luna。models 定义一次，各角色按名字引用。每个模型只有一条路由：临时限流等待后同模型重试，额度用尽报失败，不换模型。改完跑 `plan-council doctor`。",
+  "clis": {
+    "pi": {
+      "_note": "--no-extensions 必须保留：装了扩展时 --tools 白名单不生效（工具列表变成 none），模型会编造路径",
+      "base": ["pi", "-p", "--no-session", "--no-extensions", "--tools", "read,grep,find,ls"],
+      "model": ["--model", "{model}"],
+      "thinking": ["--thinking", "{thinking}"],
+      "prompt_arg": "@{prompt_file}"
+    }
+  },
+  "models": {
+    "deepseek": {"cli": "pi", "model": "opencode-go/deepseek-v4.1-flash", "thinking": "high"},
+    "glm": {"cli": "pi", "model": "opencode-go/glm-5.3-flash", "thinking": "high"},
+    "muse": {"cli": "pi", "model": "opencode-go/muse-spark-1.3-contributor", "thinking": "high"},
+    "gpt6luna": {"cli": "pi", "model": "opencode-go/gpt-6-luna", "thinking": "high"}
+  },
+  "keep_awake": {
+    "_note": "macOS 下 run 期间用 caffeinate -i 阻止空闲睡眠，进程结束自动解除；合盖睡眠挡不住。一次回放时 Mac 睡眠把评审拉长到 55–98 分钟",
+    "enabled": true
+  },
+  "rate_limit": {
+    "_note": "临时限流（429 rate limit、overloaded、503）与接口报错（API error、网络错误）按顺序等待这些秒数后同模型原样重试；额度用尽（usage limit 等）直接失败",
+    "waits": [60, 180]
+  },
+  "sandbox": {
+    "_note": "macOS 下用 sandbox-exec 禁止模型读源仓库、其他运行目录和各编码助手的会话记录（deny_agent_sessions，目录清单见 council.py 的 AGENT_SESSION_DIRS），只能读本次运行目录；deny_read 可追加路径",
+    "enabled": true,
+    "deny_agent_sessions": true,
+    "deny_read": []
+  },
+  "timeouts": {
+    "scout": 1200,
+    "drafter": 1800,
+    "_note": "单位秒。评审实测常见 2–10 分钟，最慢一次约 23 分钟，评审超时放到 2400 免得被截断；诊断评审 GLM 最高档实测 1111 / 1316 / 2062 秒，单独放到 3600",
+    "critic": 2400,
+    "critic_diagnosis": 3600,
+    "synthesizer": 1800,
+    "premortem": 1200,
+    "reviser": 1500
+  },
+  "light": {
+    "_note": "默认用法：DeepSeek 起草；改动任务由 GPT 6 Luna 看约束与范围、Muse 看可验证性；缺陷任务（--kind bug 或任务卡 type: bug）由 GPT 6 Luna 与 GLM 都开最高档（max）并行做诊断、Muse 看可验证性——一次缺陷回放的 A/B 里两者最高档各约 7–8 分，命中的漏洞几乎不重合，合起来约 13–14 分。评审模型都不同于起草模型",
+    "drafter": "deepseek",
+    "critics": {"constraints": "gpt6luna", "verify": "muse"},
+    "bug_critics": {
+      "diagnosis": [{"use": "gpt6luna", "thinking": "max"}, {"use": "glm", "thinking": "max"}],
+      "verify": "muse"
+    }
+  },
+  "roles": {
+    "_note": "full 模式（实验）专用；早期一次历史任务回放里最终计划不如单份草案",
+    "scout": "deepseek",
+    "drafters": ["deepseek", "glm", "gpt6luna"],
+    "critics": {"facts": "glm", "constraints": "gpt6luna", "verify": "muse"},
+    "synthesizer": "muse",
+    "premortem": ["deepseek", "glm"],
+    "revise_on": ["P1"]
+  }
+}

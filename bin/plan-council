@@ -1,0 +1,26 @@
+#!/bin/sh
+# plan-council launcher: finds Python 3.9+ and runs scripts/council.py next to this file.
+# Link it onto your PATH, e.g.  ln -s <skill-dir>/bin/plan-council ~/.local/bin/plan-council
+set -e
+
+# Resolve symlinks so the skill directory is found when this file is linked elsewhere.
+SELF="$0"
+while [ -L "$SELF" ]; do
+    DIR=$(cd "$(dirname "$SELF")" && pwd)
+    SELF=$(readlink "$SELF")
+    case "$SELF" in /*) ;; *) SELF="$DIR/$SELF" ;; esac
+done
+ROOT=$(cd "$(dirname "$SELF")/.." && pwd)
+
+PY="${PLAN_COUNCIL_PYTHON:-}"
+if [ -z "$PY" ]; then
+    for c in python3.13 python3.12 python3.11 python3.10 python3; do
+        if command -v "$c" >/dev/null 2>&1 \
+            && "$c" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' 2>/dev/null; then
+            PY=$(command -v "$c")
+            break
+        fi
+    done
+fi
+[ -n "$PY" ] || { echo "plan-council: Python 3.9+ not found (set PLAN_COUNCIL_PYTHON)" >&2; exit 127; }
+exec "$PY" "$ROOT/scripts/council.py" "$@"
