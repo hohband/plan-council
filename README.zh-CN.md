@@ -13,7 +13,7 @@ plan-council 是一个给编码 agent 用的技能（外加一个不依赖第三
 - **把几份草案合成一份，计划反而变差。**「三份草案 → 评审 → 综合」的流程最终 11.5/15 分，单份草案却有 13–15 分：综合把写准的代码位置概括掉了，一条评审还说服综合者否掉了正确的少数意见。所以默认流程从不改写草案，评审只做加法。
 - **想推翻什么，必须拿出证据。** 每条评审意见标成「反驳 / 顾虑 / 补充」。反驳必须附可核验的反例（`文件:行号`，或一条命令及其结果），没有就降级为顾虑，计划原来的论断保留。
 - **查缺陷要有运行证据，光看代码不够。** 缺陷模式下，起草者先写一张假设表（至少 3 个跨层面的假设；只有矛盾证据才能判「不成立」，缺证据就标「待查」），你可以附上日志、数据库记录或复现步骤。证据能指向现场时，一份便宜模型的草案就能找到根因；证据不到位时，所有方案都猜错了。
-- **不同模型抓到的问题不同。** 缺陷模式让两个诊断评审并行（GPT 6 Luna 和 GLM，都开最高思考档），因为同一份草案、同一套指令下，它们抓到的问题几乎不重合。
+- **不同模型抓到的问题不同。** 缺陷模式让两个诊断评审并行（GPT 6 Luna 和 DeepSeek V4.1 Flash，都开最高思考档），因为同一份草案、同一套指令下，它们抓到的问题不同：DeepSeek 找到的问题最多、没有误伤（测试替身失真、出错后状态没落库），生命周期与影响面的漏洞（按会话匹配误停下一轮、修完仍不查有效期、清理波及所有用户）只有 Luna 抓到过。DeepSeek 同时也是起草者，同族自评可能共享盲区，正好由 Luna 补。
 
 ## 目前的结果（样本很小，当作个例看，不是基准测试）
 
@@ -25,7 +25,7 @@ plan-council 是一个给编码 agent 用的技能（外加一个不依赖第三
 | 模式 | 步骤 | 模型调用 | 常见耗时 |
 |---|---|---|---|
 | `light`（默认），改动任务 | DeepSeek 起草 → GPT 6 Luna 看约束与范围，Muse 看可验证性 | 3 次 | 10–30 分钟 |
-| `light`（默认），缺陷任务 | DeepSeek 先写根因再写计划 → GPT 6 Luna 与 GLM 并行诊断，Muse 看可验证性 | 4 次 | 20–40 分钟 |
+| `light`（默认），缺陷任务 | DeepSeek 先写根因再写计划 → GPT 6 Luna 与 DeepSeek 并行诊断，Muse 看可验证性 | 4 次 | 15–25 分钟 |
 | `full`（实验） | 摸底 → 三份草案 → 评审 → 综合 → 事前验尸 → 修订 | 约 11 次 | 更久 |
 
 一次运行产出：
@@ -45,7 +45,7 @@ plan-council 是一个给编码 agent 用的技能（外加一个不依赖第三
 ## 环境要求
 
 - **Python 3.9+**，只用标准库。
-- **[pi](https://github.com/earendil-works/pi) 编码 agent 命令行**（`npm i -g @earendil-works/pi-coding-agent`），并配好模型。默认 `council.json` 通过 pi 的 opencode-go 渠道用四个模型：DeepSeek V4.1 Flash、GPT 6 Luna、GLM-5.3-Flash、Muse Spark 1.3 Contributor。换成任何 pi 能调用的模型都行：改 `council.json`，再跑 `plan-council doctor`。
+- **[pi](https://github.com/earendil-works/pi) 编码 agent 命令行**（`npm i -g @earendil-works/pi-coding-agent`），并配好模型。默认 `council.json` 通过 pi 的 opencode-go 渠道用四个模型（DeepSeek V4.1 Flash、GPT 6 Luna、GLM-5.3-Flash、Muse Spark 1.3 Contributor），再通过 minimax-cn 渠道定义了 MiniMax-M3.1-Flash（默认流程不用）。换成任何 pi 能调用的模型都行：改 `council.json`，再跑 `plan-council doctor`。
 - **macOS** 才有读权限沙箱，其他系统照常运行但没有这层隔离。
 - 提示词、角色卡和报告都是**中文**写的。
 
@@ -83,7 +83,7 @@ plan-council run --brief bug.md --kind bug --evidence app.log --evidence repro.m
 ## 配置（`council.json`）
 
 - `models`：每个模型定义一次：命令行、模型名、思考档位。
-- `light`：默认流程的起草者和评审视角。一个视角可以列多个模型（`[{"use": "gpt6luna", "thinking": "max"}, {"use": "glm", "thinking": "max"}]`），用同一提示并行跑。
+- `light`：默认流程的起草者和评审视角。一个视角可以列多个模型（`[{"use": "gpt6luna", "thinking": "max"}, {"use": "deepseek", "thinking": "max"}]`），用同一提示并行跑。
 - `roles`：实验性的 `full` 流程。
 - `rate_limit.waits`、`timeouts`、`sandbox`（`deny_read`、`deny_agent_sessions`）、`keep_awake`。
 

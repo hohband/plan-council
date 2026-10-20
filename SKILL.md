@@ -7,11 +7,11 @@ description: 一个较弱模型起草开发计划，另几个模型从不同视�
 
 默认流程（light）：DeepSeek V4.1 Flash 起草一份计划，其他模型评审：
 - 改动任务：GPT 6 Luna 看「约束与范围」，Muse 看「可验证性」；
-- 缺陷任务：起草者先用假设表诊断根因，GPT 6 Luna 和 GLM 都开最高档（max）并行做「诊断」质疑，Muse 看「可验证性」。一次缺陷回放的对比里两者最高档单份各约 7–8 分，找到的漏洞几乎不重合，合起来约 13–14 分。
+- 缺陷任务：起草者先用假设表诊断根因，GPT 6 Luna 和 DeepSeek V4.1 Flash（都开最高档 max）并行做「诊断」质疑，Muse 看「可验证性」。三份缺陷草案的对比里，DeepSeek 找到的问题最多、没有一次误伤，擅长测试替身失真、出错后不落库这类漏洞；Luna 找到的少，但「按会话匹配会误停下一轮」「修完 SQL 后确认仍不查有效期」「过期清理波及所有用户」这类生命周期与影响面漏洞只有它抓到，两者互补。DeepSeek 既起草又兼一路诊断，是有意的取舍：同族自评可能共享盲区，由 Luna 补。
 
 不做综合重写，评审意见原样交给人裁决。每份产出里的 `path:line` 引用都由脚本核验。编排由 `scripts/council.py` 完成，你只负责触发和解读结果。
 
-改动任务一次运行 3 次模型调用，约 10–30 分钟；缺陷任务 4 次，约 20–40 分钟（两路诊断并行，等的是 GLM 最高档：实测 19–34 分钟，诊断超时单独放到 1 小时）。单文件修复不必用它。
+改动任务一次运行 3 次模型调用，约 10–30 分钟；缺陷任务 4 次，约 15–25 分钟（两路诊断并行，等的是较慢的一路：DeepSeek 最高档实测 9–12 分钟、Luna 最高档 7–10 分钟；诊断超时单独放到 1 小时）。单文件修复不必用它。
 
 设计原则是让模型之间做加法、不互相否定：
 - 草案和评审各自独立；
@@ -75,11 +75,11 @@ description: 一个较弱模型起草开发计划，另几个模型从不同视�
 
 ## 配置
 
-`council.json` 只用 pi，只用 pi 里 opencode-go 的四个模型：DeepSeek V4.1 Flash、Muse Spark 1.3 Contributor、GLM-5.3-Flash、GPT 6 Luna。这是作者定的模型白名单：不要擅自加别的模型或别的 provider；要换模型，先问用户，得到同意再改 `council.json` 并跑 `doctor`。
+`council.json` 只用 pi，只用这五个模型：pi 里 opencode-go 的 DeepSeek V4.1 Flash、Muse Spark 1.3 Contributor、GLM-5.3-Flash、GPT 6 Luna，以及 minimax-cn 的 MiniMax-M3.1-Flash。这是作者定的模型白名单：不要擅自加别的模型或别的 provider；要换模型，先问用户，得到同意再改 `council.json` 并跑 `doctor`。
 
 - `models`：每个模型定义一次，只有一条路由。
-- `light`：默认流程的起草者和评审视角，按名字引用 `models`；`bug_critics` 是缺陷任务的评审视角。评审模型都不同于起草模型。
-  - 一个视角可以写成列表，同一角色卡、同一提示词并行跑多份，例如 `"diagnosis": [{"use": "gpt6luna", "thinking": "max"}, {"use": "glm", "thinking": "max"}]`；`{"use": 名字, 覆盖字段}` 复用 `models` 里的定义、只改思考档位。
+- `light`：默认流程的起草者和评审视角，按名字引用 `models`；`bug_critics` 是缺陷任务的评审视角。评审模型一般不同于起草模型；例外是缺陷诊断里 DeepSeek 兼一路（作者定的），另一路必须是别的模型。
+  - 一个视角可以写成列表，同一角色卡、同一提示词并行跑多份，例如 `"diagnosis": [{"use": "gpt6luna", "thinking": "max"}, {"use": "deepseek", "thinking": "max"}]`；`{"use": 名字, 覆盖字段}` 复用 `models` 里的定义、只改思考档位。
 - `roles`：`--mode full` 的实验性多稿流水线。回放里效果不如单稿，用户没要求就不用。
 - `rate_limit.waits`：临时限流（429 rate limit、overloaded、503）或接口报错（API error、网络错误、流式响应中断、空响应）时按这些秒数等待，再对同一模型原样重试；额度用尽（usage limit 等）直接失败，不换模型。只有输出格式不合格才带「请重写」反馈重试。
 
@@ -96,6 +96,7 @@ plan-council doctor
 - **pi 必须加 `--no-extensions`**。装了扩展时 `--tools` 白名单不生效，工具列表变成 `(none)`，模型就会编造路径（实测出现过 `paymentService.ts:47` 这类不存在的引用）。
 - 在脚本里调用 `pi -p` 要把 stdin 接到 `/dev/null`，否则会卡在读管道输入上。
 - **思考档位各模型不同，配错了 pi 不报错**：会悄悄换成最近的有效档（先往上找）。opencode-go 上 GLM-5.3-Flash 只有 low / high / max，配 medium 实际按 high 跑；GPT 6 Luna 有 off / low / medium / high / xhigh / max。档位以 `~/.pi/agent/models-store.json` 的 `thinkingLevelMap` 为准（标 null 的无效），`doctor` 和 `run` 开头都会提示。
+- **MiniMax-M3.1-Flash（minimax-cn）已不在默认流程里**，换回来用时注意：同时调用多路会被限流（实测 6 路并发全部返回 `429 已达到 Token Plan 速率限制（2062）`），回放要一个接一个跑；偶尔连续返回空响应（实测连续三次、第四次才成），默认重试次数因此放到四次；平时 4–6 分钟，但有一次跑了 46 分钟仍无产出（进程一直在收发数据），只能手动停掉。它的高档与最高档得分几乎一样，用高档即可。
 - 模型的读文件工具能读快照以外的路径（实测会读 `../brief.md`）。macOS 下默认用 `sandbox-exec` 限制读权限：源仓库、其他运行目录（`~/.cache/plan-council` 与本次运行目录的上一级）、各编码助手的会话记录（codex、Claude、pi、kimi、workbuddy、commandcode、opencode、omp）都不可读，只能读本次运行目录；规则写在运行目录的 `sandbox.sb`。非 macOS 没有这层保护。
 - 会话记录必须封：一次回放时原修复的 codex 会话就在 `~/.codex/sessions` 里，模型的读文件工具读得到；GLM 也实测 grep 过 home 下 pi 的安装目录。新装了别的编码助手，把它的会话目录加进 `council.py` 的 `AGENT_SESSION_DIRS`。
 - 快照里没有 `.git`，模型看不到提交历史。回放历史任务（`--rev`）时，评分标准、原始任务卡、含答案的较新快照不要放进运行目录或它的上一级；放在别处时，加进配置的 `sandbox.deny_read`。

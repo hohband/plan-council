@@ -13,7 +13,7 @@ The design came from replaying real tasks from a production codebase and scoring
 - **Merging drafts made plans worse.** A "three drafts → critics → synthesis" council scored 11.5/15 while the individual drafts scored 13–15: the synthesis summarized away precise locations, and one critic talked it out of a correct minority view. So the default flow never rewrites the draft. Critics only add.
 - **Overturning anything requires evidence.** Every finding is tagged *refutation*, *concern* or *addition*. A refutation must carry a counterexample someone can check (`file:line`, or a command and its result). Without one it is downgraded to a concern, and the plan's claim stands.
 - **Bugs need runtime evidence, not just code.** In bug mode the drafter first writes a competing-hypotheses table (at least three hypotheses across layers; a hypothesis is "ruled out" only by contradicting evidence, otherwise it stays "to check"), and you can attach logs, database rows or repro notes. When the evidence pointed at the scene, even a single cheap draft found the root cause. When it did not, every plan guessed wrong.
-- **Different models catch different bugs.** Bug mode runs two diagnosis critics in parallel (GPT 6 Luna and GLM, both at maximum thinking) because, given the same draft and the same prompt, their catches barely overlapped.
+- **Different models catch different bugs.** Bug mode runs two diagnosis critics in parallel (GPT 6 Luna and DeepSeek V4.1 Flash, both at maximum thinking) because, given the same draft and the same prompt, they catch different bugs: DeepSeek finds the most issues without false refutations (fake test doubles, state not persisted after an error), while only Luna has caught the lifecycle and blast-radius bugs (a session match that stops the next turn, a fix that still skips the expiry check, a cleanup that touches every user's records). DeepSeek also drafts; same-model self-review may share blind spots, which is what Luna is there for.
 
 ## Results so far (small samples — read as anecdotes, not benchmarks)
 
@@ -25,7 +25,7 @@ The design came from replaying real tasks from a production codebase and scoring
 | Mode | Steps | Model calls | Typical time |
 |---|---|---|---|
 | `light` (default), change task | DeepSeek drafts → GPT 6 Luna checks constraints and scope, Muse checks verifiability | 3 | 10–30 min |
-| `light` (default), bug task | DeepSeek drafts root cause + plan → GPT 6 Luna and GLM diagnose in parallel, Muse checks verifiability | 4 | 20–40 min |
+| `light` (default), bug task | DeepSeek drafts root cause + plan → GPT 6 Luna and DeepSeek diagnose in parallel, Muse checks verifiability | 4 | 15–25 min |
 | `full` (experimental) | scout → 3 drafts → critics → synthesis → pre-mortem → revision | about 11 | longer |
 
 A run produces:
@@ -45,7 +45,7 @@ A run produces:
 ## Requirements
 
 - **Python 3.9+** — standard library only.
-- **[pi](https://github.com/earendil-works/pi) coding agent CLI** (`npm i -g @earendil-works/pi-coding-agent`) with models configured. The default `council.json` uses four models through pi's opencode-go provider: DeepSeek V4.1 Flash, GPT 6 Luna, GLM-5.3-Flash and Muse Spark 1.3 Contributor. Use any models pi can reach: edit `council.json`, then run `plan-council doctor`.
+- **[pi](https://github.com/earendil-works/pi) coding agent CLI** (`npm i -g @earendil-works/pi-coding-agent`) with models configured. The default `council.json` uses four models through pi's opencode-go provider (DeepSeek V4.1 Flash, GPT 6 Luna, GLM-5.3-Flash, Muse Spark 1.3 Contributor) plus MiniMax-M3.1-Flash through pi's minimax-cn provider (defined but not used by default). Use any models pi can reach: edit `council.json`, then run `plan-council doctor`.
 - **macOS** for the read sandbox. Elsewhere it runs without that isolation.
 - The prompts, role cards and reports are written in **Chinese**. Models handle them fine; translate `roles/` if you want English output.
 
@@ -83,7 +83,7 @@ Then read `report.md`. Reproduce every refutation yourself before changing the p
 ## Configuration (`council.json`)
 
 - `models` — each model once: CLI, model id, thinking level.
-- `light` — drafter and critic lenses for the default flow. A lens may list several models (`[{"use": "gpt6luna", "thinking": "max"}, {"use": "glm", "thinking": "max"}]`), which run in parallel with the same prompt.
+- `light` — drafter and critic lenses for the default flow. A lens may list several models (`[{"use": "gpt6luna", "thinking": "max"}, {"use": "deepseek", "thinking": "max"}]`), which run in parallel with the same prompt.
 - `roles` — the experimental `full` pipeline.
 - `rate_limit.waits`, `timeouts`, `sandbox` (`deny_read`, `deny_agent_sessions`), `keep_awake`.
 
